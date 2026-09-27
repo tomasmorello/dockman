@@ -117,6 +117,82 @@ Once set you choose which method to use on the login page
 
 ![oidc-login](img/oidc.png)
 
+### Restrict access to groups
+
+By default, any user who can log in to your provider can log in to Dockman.
+To only allow members of specific groups, set a comma-separated list:
+
+```
+DOCKMAN_AUTH_OIDC_ALLOWED_GROUPS: "dockman-admins,ops"
+```
+
+When this is set Dockman also requests the `groups` scope, so make sure your provider allows it for the Dockman client.
+If your provider uses a different claim name for groups (e.g. `roles`), set it with:
+
+```
+DOCKMAN_AUTH_OIDC_GROUPS_CLAIM: "roles"
+```
+
+Users outside the allowed groups get a `403` after logging in at the provider.
+
+Dockman reads `email` and the groups claim from the ID token, and falls back to the provider's userinfo endpoint when
+they are missing. Logins without an email are rejected.
+
+### Disable username/password login
+
+Once OIDC works you can turn off the local username/password login, so the only way in is through your provider
+(and its MFA):
+
+```
+DOCKMAN_AUTH_LOCAL_LOGIN: false
+```
+
+This is ignored while OIDC is disabled, so you cannot lock yourself out.
+
+### Authelia example
+
+Authelia client configuration (v4.38+), restricted to the `dockman-admins` group with two-factor:
+
+```yaml
+identity_providers:
+  oidc:
+    authorization_policies:
+      dockman:
+        default_policy: 'deny'
+        rules:
+          - policy: 'two_factor'
+            subject: 'group:dockman-admins'
+    clients:
+      - client_id: 'dockman'
+        client_name: 'Dockman'
+        client_secret: '$pbkdf2-sha512$...' # hash, generate with: authelia crypto hash generate pbkdf2 --random
+        public: false
+        authorization_policy: 'dockman'
+        require_pkce: false
+        redirect_uris:
+          - 'https://dockman.example.com/api/auth/login/oidc/callback'
+        scopes: ['openid', 'profile', 'email', 'groups']
+        response_types: ['code']
+        grant_types: ['authorization_code']
+        token_endpoint_auth_method: 'client_secret_basic'
+```
+
+And in Dockman (the client secret is the plain value, not the hash):
+
+```yaml
+DOCKMAN_AUTH_ENABLE: "true"
+DOCKMAN_AUTH_OIDC_ENABLE: "true"
+DOCKMAN_AUTH_OIDC_ISSUER: "https://auth.example.com"
+DOCKMAN_AUTH_OIDC_CLIENT_ID: "dockman"
+DOCKMAN_AUTH_OIDC_CLIENT_SECRET: "the-plain-secret"
+DOCKMAN_AUTH_OIDC_REDIRECT_URL: "https://dockman.example.com/api/auth/login/oidc/callback"
+DOCKMAN_AUTH_OIDC_ALLOWED_GROUPS: "dockman-admins"
+DOCKMAN_AUTH_LOCAL_LOGIN: false
+```
+
+Authelia v4.39+ no longer puts `email` or `groups` in the ID token by default; Dockman picks them up from the userinfo
+endpoint, so no claims policy is needed.
+
 ## Customizing sessions
 
 You can further customize auth sessions using the following envs
