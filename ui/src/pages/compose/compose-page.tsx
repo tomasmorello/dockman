@@ -22,6 +22,7 @@ import AliasProvider, {useAlias} from "../../context/alias-context.tsx";
 import AliasDialog from "./components/add-alias-dialog.tsx";
 import useResizeBar from "./hooks/resize-hook.ts";
 import {isComposeFile} from "../../lib/editor.ts";
+import {useEditorSave} from "./state/save.ts";
 
 export function FilesLayout() {
     const {host = 'local'} = useParams<{ host: string }>()
@@ -295,6 +296,9 @@ const FileTabBar = ({track}: { track: number }) => {
     const contextKey = `${host}/${alias}`
     const compact = useCompactMode(state => state.enabled)
     const tabMinHeight = compact ? 34 : undefined
+    // subscribed once here and indexed per-tab below — hooks cannot be
+    // called inside the tablist.map() callback further down
+    const dirtyFiles = useEditorSave(state => state.dirtyFiles)
 
     const contextTabs = useTabsStore(state => state.contextTabs)[contextKey]
     const tabs = useMemo(() => contextTabs?.[track] ?? new Set<string>(), [contextTabs, track])
@@ -504,7 +508,12 @@ const FileTabBar = ({track}: { track: number }) => {
                                                 }}>
                                                     /
                                                 </Typography>
-                                                <Typography component="span" variant="body2" noWrap sx={{minWidth: 0}}>
+                                                <Typography component="span" variant="body2" noWrap sx={{
+                                                    minWidth: 0,
+                                                    // only the file name reflects unsaved
+                                                    // changes — the folder is just location
+                                                    color: dirtyFiles[tabFilename] ? 'warning.main' : undefined,
+                                                }}>
                                                     {label.name.slice(0, 19)}
                                                 </Typography>
                                             </Box>
@@ -516,7 +525,12 @@ const FileTabBar = ({track}: { track: number }) => {
                                                 flex: '1 1 auto',
                                                 minWidth: 0,
                                             }}>
-                                                <Typography component="span" variant="body2" noWrap sx={{minWidth: 0}}>
+                                                <Typography component="span" variant="body2" noWrap sx={{
+                                                    minWidth: 0,
+                                                    // only the file name reflects unsaved
+                                                    // changes — the folder is just location
+                                                    color: dirtyFiles[tabFilename] ? 'warning.main' : undefined,
+                                                }}>
                                                     {label.name.slice(0, 19)}
                                                 </Typography>
                                                 {label.hint && (
