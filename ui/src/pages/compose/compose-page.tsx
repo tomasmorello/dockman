@@ -21,6 +21,7 @@ import {useAliasStore, useCompactMode, useLastOpened} from "./state/files.ts";
 import AliasProvider, {useAlias} from "../../context/alias-context.tsx";
 import AliasDialog from "./components/add-alias-dialog.tsx";
 import useResizeBar from "./hooks/resize-hook.ts";
+import {isComposeFile} from "../../lib/editor.ts";
 
 export function FilesLayout() {
     const {host = 'local'} = useParams<{ host: string }>()
@@ -243,8 +244,11 @@ export const ComposePageInner = () => {
 
 interface TabLabel {
     name: string;
-    // disambiguating parent folder, only set when several open tabs share
-    // the same file name (VS Code behavior)
+    // disambiguating parent folder. For most files this is only set when
+    // several open tabs share the same file name (VS Code behavior). Compose
+    // files are the same name in every stack, so the name itself carries no
+    // information — for those the folder is always set, and the tab renders
+    // it as a "folder/" prefix instead of a faded suffix (see FileTabBar).
     hint: string;
 }
 
@@ -260,7 +264,7 @@ function buildTabLabels(filenames: string[]): Map<string, TabLabel> {
 
     const labels = new Map<string, TabLabel>();
     for (const [base, paths] of byBase) {
-        if (paths.length === 1) {
+        if (paths.length === 1 && !isComposeFile(base)) {
             labels.set(paths[0], {name: base, hint: ''});
             continue;
         }
@@ -399,10 +403,26 @@ const FileTabBar = ({track}: { track: number }) => {
                             onDragEnd={() => setDraggedTab(null)}
                             sx={{
                                 textTransform: 'none',
-                                p: 0.5,
+                                px: 0.75,
+                                py: 0.5,
+                                mx: 0.4,
                                 minHeight: tabMinHeight,
-                                maxWidth: 200,
+                                maxWidth: 220,
+                                // clip at the tab's own edge: maxWidth alone only
+                                // caps layout size, it doesn't stop children from
+                                // painting past it once they run out of room to
+                                // shrink into — this is what actually enforces the
+                                // ellipsis truncation instead of a raw overflow.
+                                overflow: 'hidden',
                                 opacity: draggedTab === tabFilename ? 0.4 : 1,
+                                // a very faint per-tab tint (plus the gap from mx above)
+                                // marks where one tab ends and the next begins, without
+                                // adding a harder divider line
+                                bgcolor: 'action.hover',
+                                borderRadius: 1,
+                                '&.Mui-selected': {
+                                    bgcolor: 'action.selected',
+                                },
                             }}
                             label={
                                 <Box sx={{
@@ -410,6 +430,11 @@ const FileTabBar = ({track}: { track: number }) => {
                                     alignItems: 'center',
                                     gap: 0.75,
                                     px: 0.5,
+                                    // without a definite width, this row sizes to its
+                                    // own content instead of the tab's (maxWidth-capped)
+                                    // box — flex-shrink then has nothing to shrink
+                                    // against, so text overflows instead of eliding.
+                                    width: '100%',
                                     minWidth: 0,
                                     // the icon slot doubles as the close button on
                                     // hover — no reserved width, no layout shift
@@ -452,25 +477,59 @@ const FileTabBar = ({track}: { track: number }) => {
                                         </IconButton>
                                     </Box>
                                     <Tooltip title={tabFilename}>
-                                        <Box sx={{
-                                            display: 'flex',
-                                            alignItems: 'baseline',
-                                            gap: 0.6,
-                                            minWidth: 0,
-                                        }}>
-                                            <Typography component="span" variant="body2" noWrap>
-                                                {label.name.slice(0, 19)}
-                                            </Typography>
-                                            {label.hint && (
-                                                <Typography component="span" variant="caption" noWrap sx={{
+                                        {isComposeFile(tabFilename) && label.hint ? (
+                                            // Every compose file is named the same, so the
+                                            // filename itself is not what tells tabs apart —
+                                            // the folder is. Lead with it, same size as the
+                                            // filename (only the color differs) so it reads
+                                            // as one path instead of a mismatched label, and
+                                            // let the (less useful) filename truncate first.
+                                            <Box sx={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 0.4,
+                                                flex: '1 1 auto',
+                                                minWidth: 0,
+                                            }}>
+                                                <Typography component="span" variant="body2" noWrap sx={{
                                                     color: 'text.secondary',
-                                                    fontSize: '0.7rem',
-                                                    maxWidth: 84,
+                                                    flexShrink: 0,
+                                                    maxWidth: 110,
                                                 }}>
-                                                    · {label.hint}
+                                                    {label.hint}
                                                 </Typography>
-                                            )}
-                                        </Box>
+                                                <Typography component="span" variant="body2" sx={{
+                                                    color: 'text.disabled',
+                                                    flexShrink: 0,
+                                                }}>
+                                                    /
+                                                </Typography>
+                                                <Typography component="span" variant="body2" noWrap sx={{minWidth: 0}}>
+                                                    {label.name.slice(0, 19)}
+                                                </Typography>
+                                            </Box>
+                                        ) : (
+                                            <Box sx={{
+                                                display: 'flex',
+                                                alignItems: 'baseline',
+                                                gap: 0.6,
+                                                flex: '1 1 auto',
+                                                minWidth: 0,
+                                            }}>
+                                                <Typography component="span" variant="body2" noWrap sx={{minWidth: 0}}>
+                                                    {label.name.slice(0, 19)}
+                                                </Typography>
+                                                {label.hint && (
+                                                    <Typography component="span" variant="caption" noWrap sx={{
+                                                        color: 'text.secondary',
+                                                        fontSize: '0.7rem',
+                                                        maxWidth: 84,
+                                                    }}>
+                                                        · {label.hint}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        )}
                                     </Tooltip>
                                 </Box>
                             }
