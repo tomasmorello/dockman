@@ -42,16 +42,27 @@ func NewService(
 			log.Fatal().Err(err).Msg("failed to query OIDC provider")
 		}
 
+		scopes := []string{oidc.ScopeOpenID, "profile", "email"}
+		if len(config.GetOIDCAllowedGroups()) > 0 {
+			// providers like Authelia only release the groups claim for this scope
+			scopes = append(scopes, "groups")
+		}
+
 		oauth2Config := &oauth2.Config{
 			ClientID:     config.OIDCClientID,
 			ClientSecret: config.OIDCClientSecret,
 			RedirectURL:  config.OIDCRedirectURL,
 			Endpoint:     provider.Endpoint(),
-			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+			Scopes:       scopes,
 		}
 
 		s.oidcProvider = provider
 		s.oauth2Config = oauth2Config
+	}
+
+	if !config.LocalLogin && !config.OIDCEnable {
+		log.Warn().Msg("DOCKMAN_AUTH_LOCAL_LOGIN=false is ignored because OIDC is not enabled; " +
+			"username/password login stays enabled so Dockman remains reachable")
 	}
 
 	_, err := s.create(user, pass)
@@ -94,6 +105,10 @@ func (auth *Service) create(username, plainTextPassword string) (*User, error) {
 }
 
 func (auth *Service) Login(username, plainTextPassword string) (*Session, string, error) {
+	if !auth.config.LocalLoginEnabled() {
+		return nil, "", ErrLocalLoginDisabled
+	}
+
 	user, err := auth.userStore.GetUser(username)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed retrive user: %w", err)
@@ -170,22 +185,42 @@ func (auth *Service) OIDCCallback(ctx context.Context, code string) (*Session, s
 		return nil, "", fmt.Errorf("failed to verify ID Token: %w", err)
 	}
 
-	// Extract Claims (Email is key here)
-	var claims struct {
-		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
-		Name          string `json:"name"`
-	}
-
-	err = idToken.Claims(&claims)
-	if err != nil {
+	var idClaims map[string]any
+	if err = idToken.Claims(&idClaims); err != nil {
 		return nil, "", fmt.Errorf("failed to parse claims: %w", err)
 	}
 
-	user, err := auth.userStore.GetUser(claims.Email)
+	allowedGroups := auth.config.GetOIDCAllowedGroups()
+	fetchUserInfo := func() (string, map[string]any, error) {
+		info, infoErr := auth.oidcProvider.UserInfo(ctx, oauth2.StaticTokenSource(oauth2Token))
+		if infoErr != nil {
+			return "", nil, infoErr
+		}
+		var claims map[string]any
+		if infoErr = info.Claims(&claims); infoErr != nil {
+			return "", nil, infoErr
+		}
+		return info.Subject, claims, nil
+	}
+
+	ident, err := resolveOIDCIdentity(
+		idClaims,
+		idToken.Subject,
+		auth.config.GetOIDCGroupsClaim(),
+		len(allowedGroups) > 0,
+		fetchUserInfo,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	if err = authorizeOIDCIdentity(ident, allowedGroups); err != nil {
+		return nil, "", err
+	}
+
+	user, err := auth.userStore.GetUser(ident.Email)
 	if err != nil {
 		randomPass := CreateAuthToken(32)
-		user, err = auth.create(claims.Email, randomPass)
+		user, err = auth.create(ident.Email, randomPass)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create user: %w", err)
 		}

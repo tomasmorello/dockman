@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -29,6 +30,9 @@ func (a *Handler) Login(_ context.Context, c *connect.Request[v1.User]) (*connec
 
 	session, authToken, err := a.srv.Login(username, password)
 	if err != nil {
+		if errors.Is(err, ErrLocalLoginDisabled) {
+			return nil, connect.NewError(connect.CodePermissionDenied, err)
+		}
 		return nil, err
 	}
 

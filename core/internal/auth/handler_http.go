@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 type HandlerHttp struct {
@@ -67,6 +69,11 @@ func (h *HandlerHttp) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	session, token, err := h.srv.OIDCCallback(ctx, code)
+	if errors.Is(err, ErrOIDCForbidden) {
+		log.Warn().Err(err).Msg("OIDC login rejected")
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	if err != nil {
 		http.Error(
 			w,
