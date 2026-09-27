@@ -3,3 +3,6 @@ allowBuilds:
   esbuild: true
   electron: false
   electron-winstaller: false
+
+overrides:
+  dompurify: 3.4.12
