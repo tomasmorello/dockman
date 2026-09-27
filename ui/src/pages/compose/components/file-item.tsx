@@ -24,6 +24,7 @@ import {useFileCreate} from "../dialogs/file-create.tsx";
 import {useFileDelete} from "../dialogs/file-delete.tsx";
 import {useFileRename} from "../dialogs/file-rename.tsx";
 import {useAliasStore, useCompactMode, useFileDrag, useHostStore, useOpenFiles} from "../state/files.ts";
+import {useEditorSave} from "../state/save.ts";
 import {useConfig} from "../../../hooks/config.ts";
 import {useComposeFileState} from "../state/status.ts";
 import {getContextKey} from "../../../context/tab-context.tsx";
@@ -164,6 +165,9 @@ const FolderItemDisplay = ({entry, depthIndex, depth}: {
     // Highlight if we are currently editing the compose file this folder points to
     const isSelected = useIsSelected(composeFilePath);
 
+    // reflect unsaved edits of the compose file this folder points to
+    const isDirty = useEditorSave(state => state.dirtyFiles[entry.isComposeFolder] ?? false);
+
     const closeComposeStatus = useComposeFileState(state => state.delete)
 
     const handleToggle = () => {
@@ -267,7 +271,8 @@ const FolderItemDisplay = ({entry, depthIndex, depth}: {
                     textDecoration: 'none'
                 }}
             >
-                <ListItemIcon sx={{minWidth: 32}}>
+                <ListItemIcon sx={{minWidth: 32, position: 'relative'}}>
+                    {isComposeFolder && <UnsavedDot dirty={isDirty}/>}
                     {isComposeFolder ?
                         <DockerFolderIcon/> :
                         <Folder sx={{color: amber[800], fontSize: '1.1rem'}}/>
@@ -379,6 +384,7 @@ const FileItemDisplay = ({entry, depth}: { entry: FsEntry, depth: number }) => {
 
     const isSelected = useIsSelected(filePath);
     const displayName = getEntryDisplayName(filename);
+    const isDirty = useEditorSave(state => state.dirtyFiles[filename] ?? false);
 
     const {contextMenu, closeCtxMenu, contextActions, handleContextMenu} = useFileMenuCtx(entry)
 
@@ -401,7 +407,8 @@ const FileItemDisplay = ({entry, depth}: { entry: FsEntry, depth: number }) => {
                 to={filePath}
                 component={RouterLink}
             >
-                <ListItemIcon sx={{minWidth: 32}}>
+                <ListItemIcon sx={{minWidth: 32, position: 'relative'}}>
+                    <UnsavedDot dirty={isDirty}/>
                     {<FileIcon filename={filename}/>}
                 </ListItemIcon>
 
@@ -551,6 +558,30 @@ const useFileMenuCtx = (entry: FsEntry) => {
 
     return {closeCtxMenu, contextActions, contextMenu, handleContextMenu}
 }
+
+// Amber dot shown on the LEFT of a file/compose-folder that has unsaved
+// edits. Kept visually distinct from the docker StatusIndicator (right side).
+const UnsavedDot = ({dirty}: { dirty: boolean }) => {
+    if (!dirty) return null;
+    return (
+        <Tooltip title="Unsaved changes" arrow placement="right">
+            <Box
+                sx={{
+                    position: 'absolute',
+                    top: -1,
+                    left: -1,
+                    width: 9,
+                    height: 9,
+                    borderRadius: '50%',
+                    bgcolor: 'warning.main',
+                    border: '2px solid',
+                    borderColor: 'background.paper',
+                    zIndex: 1,
+                }}
+            />
+        </Tooltip>
+    );
+};
 
 const StatusIndicator = ({fileStatus}: { fileStatus: Status }) => {
     const stackStatus = getStatusTheme(fileStatus);

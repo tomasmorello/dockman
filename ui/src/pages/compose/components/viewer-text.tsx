@@ -1,6 +1,18 @@
 import React, {type ReactElement, useCallback, useEffect, useMemo, useState} from 'react';
 import {useNavigate, useSearchParams} from 'react-router-dom';
-import {Box, Button, CircularProgress, Fade, Tab, Tabs, Tooltip} from '@mui/material';
+import {
+    Box,
+    Button,
+    CircularProgress,
+    Fade,
+    FormControlLabel,
+    IconButton,
+    Switch,
+    Tab,
+    Tabs,
+    Tooltip,
+    Typography
+} from '@mui/material';
 import {callRPC, useHostClient} from "../../../lib/api.ts";
 import {isComposeFile, stackDefaultTab, useEditorUrl} from "../../../lib/editor.ts";
 import {useConfig} from "../../../hooks/config.ts";
@@ -9,10 +21,11 @@ import {ShortcutFormatter} from "./shortcut-formatter.tsx";
 import {TabDeploy} from "../tab-deploy.tsx";
 import {TabStat} from "../tab-stats.tsx";
 import CenteredMessage from "../../../components/centered-message.tsx";
-import {ErrorOutlined} from "@mui/icons-material";
+import {ErrorOutlined, SaveOutlined} from "@mui/icons-material";
 import {useCompactMode, useOpenFiles} from "../state/files.ts";
 import {FileService} from "../../../gen/files/v1/files_pb.ts";
 import {indicatorMap, type SaveState} from "../hooks/status-hook.tsx";
+import {useEditorSave} from "../state/save.ts";
 
 enum TabType {
     // noinspection JSUnusedGlobalSymbols
@@ -111,6 +124,11 @@ function ViewerTextEditor({filename, track}: { filename: string, track: number }
     }, [changeTab, filename]);
 
     const [saveStatus, setSaveStatus] = useState<SaveState>('idle')
+
+    const autoSave = useEditorSave(state => state.autoSave)
+    const toggleAutoSave = useEditorSave(state => state.toggleAutoSave)
+    const isDirty = useEditorSave(state => state.dirtyFiles[filename] ?? false)
+    const saveNow = useEditorSave(state => state.savers[filename])
 
 
     const tabsList: TabDetails[] = useMemo(() => {
@@ -226,7 +244,7 @@ function ViewerTextEditor({filename, track}: { filename: string, track: number }
                 </Tabs>
 
                 {selectedTab === TabType.EDITOR &&
-                    <Box sx={{display: 'flex', gap: 1, px: 2}}>
+                    <Box sx={{display: 'flex', alignItems: 'center', gap: 1, px: 2, ml: 'auto'}}>
                         {buttonList.map((details) => (
                             <Button
                                 size="small"
@@ -237,6 +255,49 @@ function ViewerTextEditor({filename, track}: { filename: string, track: number }
                                 {details.title}
                             </Button>
                         ))}
+
+                        <Tooltip title={<ShortcutFormatter title={"Save file"} keyCombo={["CTRL", "S"]}/>}>
+                            <span>
+                                <IconButton
+                                    size="small"
+                                    aria-label="Save file"
+                                    disabled={!isDirty}
+                                    color={isDirty ? "warning" : "default"}
+                                    onClick={() => saveNow?.()}
+                                >
+                                    <SaveOutlined/>
+                                </IconButton>
+                            </span>
+                        </Tooltip>
+
+                        <Tooltip title={
+                            <Box sx={{maxWidth: 240}}>
+                                <Typography variant="caption" sx={{display: "block"}}>
+                                    {autoSave
+                                        ? "Auto-save is on: changes are saved as you type."
+                                        : "Auto-save is off: save manually with the save button or CTRL + S."}
+                                </Typography>
+                                <Typography variant="caption" sx={{display: "block", mt: 0.5, opacity: 0.8}}>
+                                    Unsaved changes are kept when switching tabs, but are lost if you fully reload the page.
+                                </Typography>
+                            </Box>
+                        }>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        size="small"
+                                        checked={autoSave}
+                                        onChange={toggleAutoSave}
+                                    />
+                                }
+                                label={
+                                    <Typography variant="caption" sx={{color: "text.secondary"}}>
+                                        Auto-save
+                                    </Typography>
+                                }
+                                sx={{mr: 0, ml: 0, whiteSpace: 'nowrap'}}
+                            />
+                        </Tooltip>
                     </Box>
                 }
             </Box>
