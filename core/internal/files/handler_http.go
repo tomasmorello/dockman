@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/RA341/dockman/internal/host/middleware"
 	fu "github.com/RA341/dockman/pkg/fileutil"
@@ -56,7 +57,7 @@ func (h *FileHandler) loadFile(w http.ResponseWriter, r *http.Request) {
 		download, _ = strconv.ParseBool(downloadStr)
 	}
 
-	reader, modTime, err := h.srv.LoadFilePath(filename, getHost, download)
+	reader, _, err := h.srv.LoadFilePath(filename, getHost, download)
 	if err != nil {
 		log.Error().Err(err).Str("path", filename).Msg("Error loading file")
 		switch {
@@ -75,7 +76,19 @@ func (h *FileHandler) loadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer fu.Close(reader)
 
-	http.ServeContent(w, r, filename, modTime, reader)
+	// This serves live, frequently-edited file content, not a static asset:
+	// a conditional-GET cache is actively harmful here. http.ServeContent
+	// answers If-Modified-Since/If-None-Match from the *request* regardless
+	// of any response header we set, so the only way to keep it from ever
+	// doing that is to give it a zero modtime — it then skips the
+	// conditional-GET path entirely and always serves the current bytes.
+	// Safari in particular readily reuses a 304 across the exact URL
+	// (litellm's tab showing another stack's cached content once both had
+	// been opened); no-store additionally stops the response from being
+	// cached client-side at all, so there is nothing left to revalidate
+	// against next time either.
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeContent(w, r, filename, time.Time{}, reader)
 }
 
 func (h *FileHandler) saveFile(w http.ResponseWriter, r *http.Request) {
