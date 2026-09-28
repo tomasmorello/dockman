@@ -138,7 +138,21 @@ function ViewerTextEditor({filename, track}: { filename: string, track: number }
 
         map.push({
             label: 'Editor',
+            // TabEditor/EditorCommon keep their own loading/contents state in
+            // React, which does NOT reset just because the filename prop
+            // changes — the same instance is reused across a file switch.
+            // That leaves a render where filename already points at the new
+            // file but contents/loading are still the previous file's,
+            // which Monaco then bakes into a brand-new model as its
+            // defaultValue (permanent, since keepCurrentModel never
+            // overwrites an existing model afterwards): one stack's tab
+            // shows another stack's compose content. Keying on filename
+            // forces a clean remount per file instead. This does not lose
+            // undo history or unsaved drafts — those live in Monaco's own
+            // model registry and the useEditorSave store, both outside
+            // this component's lifecycle.
             component: <TabEditor
+                key={filename}
                 selectedPage={filename}
                 setFileSaveStatus={setSaveStatus}
             />,
